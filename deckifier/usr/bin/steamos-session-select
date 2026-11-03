@@ -30,11 +30,6 @@ pkexec /usr/bin/steamos-polkit-helpers/steamos-set-autologin "$target" \
 
 [[ "${2:-}" == "--no-logout" ]] && exit 0
 
-# remove Steam game shortcuts left on the desktop
-DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
-grep -l "Exec=steam steam://rungameid/" "$DATA_HOME"/applications/* 2>/dev/null \
-    | xargs -r rm -- || true
-
 # end the current session, SDDM relogs into the new one
 if pgrep -u "$UID" -x kwin_wayland >/dev/null || pgrep -u "$UID" -x kwin_x11 >/dev/null; then
     dbus-send --session --type=method_call --print-reply --dest=org.kde.Shutdown \
