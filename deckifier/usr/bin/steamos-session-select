@@ -25,23 +25,34 @@ esac
 
 [[ $EUID -ne 0 ]] || die "Run this script as your user, not root."
 
+# one switch at a time: Steam/Plasma may call this several times in a row
+# while the session is closing; later calls must not touch the session
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/steamos-session-select.lock"
+flock -n 9 || exit 0
+logger -t steamos-session-select "$* (from: $(ps -o args= -p "$PPID" 2>/dev/null || echo '?'))" || true
+
 pkexec /usr/bin/steamos-polkit-helpers/steamos-set-autologin "$target" \
     || die "Could not change the autologin session"
 
 [[ "${2:-}" == "--no-logout" ]] && exit 0
 
-# end the current session, SDDM relogs into the new one
+# End the current session; SDDM (Relogin=true) logs into the new one.
+# Never "loginctl terminate-session": it kills sddm-helper too, SDDM takes
+# it as a crash and does not log in again (black screen, VT cursor).
 if pgrep -u "$UID" -x kwin_wayland >/dev/null || pgrep -u "$UID" -x kwin_x11 >/dev/null; then
+    # Steam (autostarted in Desktop Mode) can block the Plasma logout
+    if pgrep -u "$UID" -x steam >/dev/null; then
+        steam -shutdown >/dev/null 2>&1 || true
+        for _ in $(seq 20); do
+            pgrep -u "$UID" -x steam >/dev/null || break
+            sleep 0.5
+        done
+    fi
     dbus-send --session --type=method_call --print-reply --dest=org.kde.Shutdown \
             /Shutdown org.kde.Shutdown.logout >/dev/null 2>&1 \
-        || qdbus6 org.kde.Shutdown /Shutdown org.kde.Shutdown.logout 2>/dev/null \
-        || { [[ -n "${XDG_SESSION_ID:-}" ]] && loginctl terminate-session "$XDG_SESSION_ID"; }
+        || qdbus6 org.kde.Shutdown /Shutdown org.kde.Shutdown.logout >/dev/null 2>&1 \
+        || true
 elif pgrep -u "$UID" -x gamescope >/dev/null || pgrep -u "$UID" -f gamescope-session >/dev/null; then
     # leaving Game Mode: closing Steam ends gamescope-session-plus
     steam -shutdown >/dev/null 2>&1 || true
-    if [[ -n "${XDG_SESSION_ID:-}" ]]; then
-        ( sleep 20; loginctl terminate-session "$XDG_SESSION_ID" ) >/dev/null 2>&1 &
-    fi
-elif [[ -n "${XDG_SESSION_ID:-}" ]]; then
-    loginctl terminate-session "$XDG_SESSION_ID"
 fi
