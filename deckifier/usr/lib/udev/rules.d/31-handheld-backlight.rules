@@ -1,0 +1,3 @@
+# Brightness slider in Steam for any handheld panel (not only the Steam Deck):
+# let members of the "video" group write the backlight brightness.
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/usr/bin/chgrp video /sys%p/brightness", RUN+="/usr/bin/chmod g+w /sys%p/brightness"

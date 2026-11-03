@@ -1,114 +1,52 @@
 #!/usr/bin/bash
+# Switch between Game Mode and Desktop Mode (SDDM autologin based, like SteamOS).
+#
+#   steamos-session-select [gamescope|plasma|desktop|plasma-persistent] [--no-logout]
+#
+# The SDDM autologin session is changed through a small root helper (pkexec,
+# allowed without password for the active local session) and then the current
+# graphical session is ended. SDDM is configured with Relogin=true, so it logs
+# straight back in, into the newly selected session.
 set -euo pipefail
-
-session_conf="/etc/trup/session.conf";  . "$session_conf"
-
-###############################################################################
-# helpers
-###############################################################################
-is_kwin_running()   { pgrep -f kwin   >/dev/null 2>&1 || return 1; }
-is_mutter_running() { pgrep -f mutter >/dev/null 2>&1 || return 1; }
 
 die() { echo "!! $*" >&2; exit 1; }
 
-###############################################################################
-# constants / globals
-###############################################################################
-SESSION_CONF_FILE="/etc/lightdm/lightdm.conf.d/10-gamescope-session.conf"
-USER_CONF_FILE="/etc/lightdm/lightdm.conf.d/00-autologin-user.conf"
-LOCKFILE="/tmp/$(basename "$0").$UID.lock"
-
 session="${1:-gamescope}"
-
-###############################################################################
-# phase 1 – run as *user* (do NOT allow sudo)
-###############################################################################
-if [[ "${2:-}" != "--root" ]]; then
-    [[ $EUID -eq 0 ]] && die "Run this script as your user, not root."
-    [[ -n ${HOME:-}    ]] || die "\$HOME not set"
-
-    # remove Steam desktop shortcuts
-    DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
-    grep -l "Exec=steam steam://rungameid/" "$DATA_HOME"/applications/* 2>/dev/null \
-        | xargs -r rm -- || true
-
-    # politely ask the current compositor to log out
-    is_kwin_running   && qdbus6 org.kde.Shutdown /Shutdown org.kde.Shutdown.logout
-    is_mutter_running && gnome-session-quit --no-prompt
-
-    exec pkexec "$0" "$session" --root   # re‑run as root
-fi
-
-###############################################################################
-# phase 2 – run as *root*
-###############################################################################
-# locking
-cleanup() { rm -f "$LOCKFILE"; }
-exec 200>"$LOCKFILE"
-flock -n 200 || die "Another instance is already running."
-trap cleanup EXIT INT TERM HUP
-
-# map session → launcher
 case "$session" in
-  plasma-wayland-persistent|plasma-x11-persistent) session_launcher="$desktop_session" ;;
-  desktop|plasma)                                 session_launcher="${desktop_session}-session-oneshot" ;;
-  gamescope)                                      session_launcher="gamescope-session-steam" ;;
-  *) die "Unrecognised session '$session'" ;;
+    gamescope)
+        target="gamescope-session-steam.desktop" ;;
+    plasma|desktop)
+        target="plasmawayland-session-oneshot.desktop" ;;
+    plasma-persistent|plasma-wayland-persistent|plasma-x11-persistent)
+        target="plasmawayland.desktop" ;;
+    *)
+        die "Unrecognised session '$session'" ;;
 esac
-echo "Selected session launcher: $session_launcher"
 
-# wait until the old compositor is really gone
-while is_kwin_running   ; do sleep 0.5; done
-while is_mutter_running ; do sleep 0.5; done
+[[ $EUID -ne 0 ]] || die "Run this script as your user, not root."
 
-###############################################################################
-# restart Display Manager – loop until it comes up, toggling the session each
-# time it fails (gamescope <-> desktop)
-###############################################################################
-restart_dm() {
-    systemctl reset-failed display-manager.service || true
-    systemctl restart display-manager.service || true
-}
+pkexec /usr/bin/steamos-polkit-helpers/steamos-set-autologin "$target" \
+    || die "Could not change the autologin session"
 
-start_and_wait() {
-    restart_dm                     # stop → start DM
-    sleep 3                        # give it 3 s to come up
+[[ "${2:-}" == "--no-logout" ]] && exit 0
 
-    if systemctl is-active --quiet display-manager.service; then
-        return 0                  # DM is active → success
-    else
-        return 1                  # DM not active → failure
+# remove Steam game shortcuts left on the desktop
+DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
+grep -l "Exec=steam steam://rungameid/" "$DATA_HOME"/applications/* 2>/dev/null \
+    | xargs -r rm -- || true
+
+# end the current session, SDDM relogs into the new one
+if pgrep -u "$UID" -x kwin_wayland >/dev/null || pgrep -u "$UID" -x kwin_x11 >/dev/null; then
+    dbus-send --session --type=method_call --print-reply --dest=org.kde.Shutdown \
+            /Shutdown org.kde.Shutdown.logout >/dev/null 2>&1 \
+        || qdbus6 org.kde.Shutdown /Shutdown org.kde.Shutdown.logout 2>/dev/null \
+        || { [[ -n "${XDG_SESSION_ID:-}" ]] && loginctl terminate-session "$XDG_SESSION_ID"; }
+elif pgrep -u "$UID" -x gamescope >/dev/null || pgrep -u "$UID" -f gamescope-session >/dev/null; then
+    # leaving Game Mode: closing Steam ends gamescope-session-plus
+    steam -shutdown >/dev/null 2>&1 || true
+    if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+        ( sleep 20; loginctl terminate-session "$XDG_SESSION_ID" ) >/dev/null 2>&1 &
     fi
-}
-
-# user that launched the switch (pkexec keeps the caller UID)
-autologin_user="$(id -nu "${PKEXEC_UID:?PKEXEC_UID not set, run via pkexec}")" \
-    || die "Cannot resolve user for UID ${PKEXEC_UID}"
-
-# build the two launcher names (gamescope  <->  desktop)
-gamescope_launcher="gamescope-session-steam"
-desktop_launcher="${desktop_session}-session-oneshot"
-
-# decide which one we start with
-current_launcher="$session_launcher"         # set earlier in the script
-
-for ((attempt=1; ; attempt++)); do
-    printf '[Seat:*]\nautologin-session=%s\n' "$current_launcher" > "$SESSION_CONF_FILE"
-    printf '[Seat:*]\nautologin-user=%s\n' "$autologin_user" > "$USER_CONF_FILE"
-    echo "Attempt $attempt: starting Display Manager with $current_launcher"
-
-    if start_and_wait; then
-        echo "Display Manager is active with $current_launcher (after $attempt attempt(s))"
-        session_launcher="$current_launcher"   # final session that succeeded
-        break
-    fi
-
-    echo "Display Manager failed with $current_launcher"
-
-    # toggle launcher for next iteration
-    if [[ "$current_launcher" == "$gamescope_launcher" ]]; then
-        current_launcher="$desktop_launcher"
-    else
-        current_launcher="$gamescope_launcher"
-    fi
-done
+elif [[ -n "${XDG_SESSION_ID:-}" ]]; then
+    loginctl terminate-session "$XDG_SESSION_ID"
+fi

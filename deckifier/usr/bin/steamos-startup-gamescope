@@ -1,19 +1,32 @@
 #!/bin/bash
-# Runs before the display manager on every boot:
-#  - if no autologin user is configured yet, use the first regular user
-#  - always boot into Game Mode
+# Runs before the display manager on every boot: set the autologin session
+# from /etc/ogc-handheld/boot-session.conf (last, desktop or gamemode).
+# Keeps the configured autologin user; on first boot picks the first regular
+# user (UID >= 1000).
+CONF="/etc/sddm.conf.d/zz-steamos-autologin.conf"
+BOOT_CONF="/etc/ogc-handheld/boot-session.conf"
 
-LDM_DIR="/etc/lightdm/lightdm.conf.d"
-USER_CONF="$LDM_DIR/00-autologin-user.conf"
-SESSION_CONF="$LDM_DIR/10-gamescope-session.conf"
+BOOT_SESSION=last
+[ -r "$BOOT_CONF" ] && . "$BOOT_CONF"
 
-mkdir -p "$LDM_DIR"
+current="$(sed -n 's/^Session=//p' "$CONF" 2>/dev/null | head -n1)"
+case "$BOOT_SESSION" in
+    gamemode|gamescope) session="gamescope-session-steam.desktop" ;;
+    desktop|plasma)     session="plasmawayland.desktop" ;;
+    *)
+        # last: keep what the previous session left. "Switch to Desktop"
+        # from Game Mode is one-shot, so a reboot goes back to Game Mode.
+        case "$current" in
+            plasmawayland.desktop)  session="plasmawayland.desktop" ;;
+            *)                      session="gamescope-session-steam.desktop" ;;
+        esac
+        ;;
+esac
 
-if ! grep -qs '^autologin-user=.\+' "$USER_CONF"; then
-    first_user="$(getent passwd | awk -F: '$3>=1000 && $3<60000 {print $1; exit}')"
-    if [ -n "$first_user" ]; then
-        printf '[Seat:*]\nautologin-user=%s\n' "$first_user" > "$USER_CONF"
-    fi
+user="$(sed -n 's/^User=//p' "$CONF" 2>/dev/null | head -n1)"
+if [ -z "$user" ] || ! id "$user" >/dev/null 2>&1; then
+    user="$(getent passwd | awk -F: '$3>=1000 && $3<60000 {print $1; exit}')"
 fi
+[ -n "$user" ] || exit 0   # no user yet: SDDM shows the greeter
 
-printf '[Seat:*]\nautologin-session=gamescope-session-steam\n' > "$SESSION_CONF"
+exec /usr/bin/steamos-polkit-helpers/steamos-set-autologin "$session" "$user"

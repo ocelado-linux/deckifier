@@ -1,0 +1,39 @@
+#!/usr/bin/bash
+# Root helper: set the SDDM autologin session.
+#   via pkexec:   steamos-set-autologin <session.desktop>          (user = caller)
+#   as root:      steamos-set-autologin <session.desktop> <user>
+set -euo pipefail
+
+CONF_DIR="/etc/sddm.conf.d"
+CONF="$CONF_DIR/zz-steamos-autologin.conf"
+
+target="${1:-}"
+case "$target" in
+    gamescope-session-steam.desktop|plasmawayland-session-oneshot.desktop|plasmawayland.desktop) ;;
+    *) echo "Session not allowed: '$target'" >&2; exit 1 ;;
+esac
+
+if [[ -n "${PKEXEC_UID:-}" ]]; then
+    user="$(id -nu "$PKEXEC_UID")"
+else
+    [[ $EUID -eq 0 ]] || { echo "Must run as root" >&2; exit 1; }
+    user="${2:-}"
+fi
+[[ -n "$user" ]] && id "$user" >/dev/null 2>&1 || { echo "Invalid user '$user'" >&2; exit 1; }
+
+mkdir -p "$CONF_DIR"
+tmp="$(mktemp "$CONF_DIR/.zz-steamos-autologin.XXXXXX")"
+printf '[Autologin]\nUser=%s\nSession=%s\nRelogin=true\n' "$user" "$target" > "$tmp"
+chmod 0644 "$tmp"
+mv -f "$tmp" "$CONF"
+
+# openSUSE: display managers take the autologin user from sysconfig and
+# disable autologin when DISPLAYMANAGER_AUTOLOGIN is empty
+SYSCONFIG="/etc/sysconfig/displaymanager"
+if [[ -f "$SYSCONFIG" ]]; then
+    if grep -q '^DISPLAYMANAGER_AUTOLOGIN=' "$SYSCONFIG"; then
+        sed -i "s/^DISPLAYMANAGER_AUTOLOGIN=.*/DISPLAYMANAGER_AUTOLOGIN=\"$user\"/" "$SYSCONFIG"
+    else
+        echo "DISPLAYMANAGER_AUTOLOGIN=\"$user\"" >> "$SYSCONFIG"
+    fi
+fi
