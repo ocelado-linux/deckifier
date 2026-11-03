@@ -94,12 +94,18 @@ run_update() {
 }
 
 check_update() {
-    transactional-update -c run zypper --gpg-auto-import-keys --non-interactive refresh || true
-    # Run zypper lu and count the number of update entries
-    update_count=$(zypper lu | tail -n +5 | grep -c ' | ' || true)
+    # Refresh metadata outside of a transaction: "transactional-update run"
+    # would create a new snapshot on every check.
+    zypper --gpg-auto-import-keys --non-interactive refresh || true
+    # Ask exactly what the update ("transactional-update dup") would do.
+    # "zypper lu" is not equivalent: it also lists versions that dup will
+    # never install (other repos/vendors, lower priority), so Steam kept
+    # offering an update that never went away.
+    local out
+    out="$(LC_ALL=C zypper --non-interactive dup --dry-run 2>&1 || true)"
+    echo "$out" | tail -n 20
 
-    # Check the update count
-    if [ "$update_count" -eq 0 ]; then
+    if grep -q "Nothing to do" <<<"$out"; then
         echo "No updates available."
         return 7
     else
