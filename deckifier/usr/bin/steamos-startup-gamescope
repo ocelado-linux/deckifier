@@ -1,6 +1,19 @@
 #!/bin/bash
+# Runs before the display manager on every boot:
+#  - if no autologin user is configured yet, use the first regular user
+#  - always boot into Game Mode
 
-{
-  echo "[Seat:*]"
-  echo "autologin-session=gamescope-session-steam"
-} > "/etc/lightdm/lightdm.conf.d/10-gamescope-session.conf"
+LDM_DIR="/etc/lightdm/lightdm.conf.d"
+USER_CONF="$LDM_DIR/00-autologin-user.conf"
+SESSION_CONF="$LDM_DIR/10-gamescope-session.conf"
+
+mkdir -p "$LDM_DIR"
+
+if ! grep -qs '^autologin-user=.\+' "$USER_CONF"; then
+    first_user="$(getent passwd | awk -F: '$3>=1000 && $3<60000 {print $1; exit}')"
+    if [ -n "$first_user" ]; then
+        printf '[Seat:*]\nautologin-user=%s\n' "$first_user" > "$USER_CONF"
+    fi
+fi
+
+printf '[Seat:*]\nautologin-session=gamescope-session-steam\n' > "$SESSION_CONF"
