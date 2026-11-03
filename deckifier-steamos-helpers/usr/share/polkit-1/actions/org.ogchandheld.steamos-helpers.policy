@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<!-- Generic SteamOS polkit helpers for non-Steam-Deck handhelds
+     (on the Steam Deck the same helpers come from jupiter-hw-support) -->
+<policyconfig>
+  <action id="org.ogchandheld.steamos-helpers.steamos-update">
+    <description>Run the SteamOS update helper</description>
+    <message>Authentication is required: run the steamos update helper</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-update</annotate>
+  </action>
+  <action id="org.ogchandheld.steamos-helpers.steamos-select-branch">
+    <description>Select the system update branch</description>
+    <message>Authentication is required: select the system update branch</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-select-branch</annotate>
+  </action>
+  <action id="org.ogchandheld.steamos-helpers.steamos-set-timezone">
+    <description>Set the system timezone</description>
+    <message>Authentication is required: set the system timezone</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-set-timezone</annotate>
+  </action>
+  <action id="org.ogchandheld.steamos-helpers.steamos-set-hostname">
+    <description>Set the system hostname</description>
+    <message>Authentication is required: set the system hostname</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-set-hostname</annotate>
+  </action>
+  <action id="org.ogchandheld.steamos-helpers.steamos-reboot-now">
+    <description>Reboot the system</description>
+    <message>Authentication is required: reboot the system</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-reboot-now</annotate>
+  </action>
+  <action id="org.ogchandheld.steamos-helpers.steamos-poweroff-now">
+    <description>Power off the system</description>
+    <message>Authentication is required: power off the system</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-poweroff-now</annotate>
+  </action>
+  <action id="org.ogchandheld.steamos-helpers.steamos-restart-sddm">
+    <description>Restart the display manager</description>
+    <message>Authentication is required: restart the display manager</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/steamos-polkit-helpers/steamos-restart-sddm</annotate>
+  </action>
+</policyconfig>

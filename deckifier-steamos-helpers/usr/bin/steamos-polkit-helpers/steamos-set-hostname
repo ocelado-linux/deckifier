@@ -1,0 +1,11 @@
+#!/bin/bash
+# Steam calls this helper by its fixed path; it re-runs itself as root via
+# pkexec (allowed by org.ogchandheld.steamos-helpers.policy).
+set -eu
+
+if [[ $EUID -ne 0 ]];
+then
+    exec pkexec --disable-internal-agent "$0" "$@"
+fi
+
+hostnamectl set-hostname "$1"
